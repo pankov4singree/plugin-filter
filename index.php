@@ -53,6 +53,7 @@ Class SeoFilterForWooCommerce
         add_rewrite_rule((empty($this->product_page_slug) ? 'shop' : $this->product_page_slug) . '/filter/?([a-zA-Z0-9_/-]+)/?$', 'index.php?post_type=product&filter=$matches[1]', 'top');
         add_rewrite_rule((empty($this->product_page_slug) ? 'shop' : $this->product_page_slug) . '/orderby/?([^/]+)/page/?([0-9]{1,})/?$', 'index.php?post_type=product&custom_order=$matches[1]&paged=$matches[2]', 'top');
         add_rewrite_rule((empty($this->product_page_slug) ? 'shop' : $this->product_page_slug) . '/orderby/?([^/]+)/?$', 'index.php?post_type=product&custom_order=$matches[1]', 'top');
+        flush_rewrite_rules();
     }
 
     public function seo_filter_woocommerce_enqueue_scripts_and_styles()
@@ -64,14 +65,11 @@ Class SeoFilterForWooCommerce
     public function get_filters()
     {
         global $wp_query;
+        unset($wp_query->query_vars['taxonomy']);
+        unset($wp_query->query_vars['term']);
         $taxonomies = get_object_taxonomies('product');
         foreach ($taxonomies as $primary_key => $taxonomy) {
             if ($taxonomy != 'product_type' and $taxonomy != 'product_visibility' and $taxonomy != 'product_shipping_class') {
-                $show_count = true;
-                foreach ($wp_query->query_vars['tax_query'] as $value) {
-                    if (is_array($value) and $value['taxonomy'] == $taxonomy)
-                        $show_count = false;
-                }
                 echo "<div class='filter-$taxonomy filter'><ul>";
                 echo "<input type='hidden' class='name-filter' value='$taxonomy'>";
                 $terms = get_terms(array('taxonomy' => $taxonomy, 'hide_empty' => false));
@@ -84,16 +82,20 @@ Class SeoFilterForWooCommerce
                     });
                     $query['posts_per_page'] = -1;
                     $used = false;
-                    foreach ($query['tax_query'] as $value) {
+                    $push = true;
+                    foreach ($query['tax_query'] as $key => $value) {
                         if (is_array($value) and $value['taxonomy'] == $taxonomy and in_array($term->slug, array_map('strtolower', $value['terms'])))
                             $used = true;
+                        if (is_array($value) and $value['taxonomy'] == $taxonomy) {
+                            $query['tax_query'][$key]['terms'][] = $term->slug;
+                            $push = false;
+                        }
                     }
-                    array_push($query['tax_query'], array('taxonomy' => $taxonomy, 'field' => 'id', 'terms' => array($term->term_id)));
+                    if ($push)
+                        array_push($query['tax_query'], array('taxonomy' => $taxonomy, 'field' => 'slug', 'terms' => array($term->slug)));
+                    $count = new WP_Query($query);
+                    echo "<li" . ($used ? " class='active'" : '') . "><input " . ($used ? " checked " : '') . "class='$taxonomy $term->term_id' type='checkbox' id='$primary_key-$term->slug-radio' name='filter[$taxonomy][]' value='$term->slug'><label for='$primary_key-$term->slug-radio'>$term->name" . (!$used ? "<span class='count'>$count->post_count</span>" : "") . "</label></li>";
                     $count = null;
-                    if ($show_count)
-                        $count = new WP_Query($query);
-                    echo "<li" . ($used ? " class='active'" : '') . "><input " . ($used ? " checked " : '') . "class='$taxonomy' type='checkbox' id='$primary_key-$term->slug-radio' name='filter[$taxonomy][]' value='$term->slug'><label for='$primary_key-$term->slug-radio'>$term->name" . ($show_count ? (!$used ? "<span class='count'>$count->post_count</span>" : "") : "") . "</label></li>";
-                    wp_reset_postdata();
                 }
                 echo '</ul></div>';
             }
@@ -191,7 +193,7 @@ Class SeoFilterForWooCommerce
                 $query->query_vars = $this->get_order_by($query->query_vars, $query->query_vars['custom_order'], true);
             }
         }
-        return add_filter('seo_filter_woocommerce_pre_get_posts', $query);
+        return do_action('seo_filter_woocommerce_pre_get_posts', $query);
     }
 
     public function seo_filter_woocommerce_wp_head()
@@ -265,7 +267,7 @@ Class SeoFilterForWooCommerce
                 wc_get_template_part('content', 'product');
             endwhile;
             $data = ob_get_clean();
-            wp_send_json_success(array('items' => $data, 'last_page' => $wp_query->max_num_pages, 'filter' => $new_filters));
+            wp_send_json_success(array('items' => $data, 'last_page' => $wp_query->max_num_pages, 'filter' => $new_filters, 'request' => $wp_query->request));
         else:
             wp_send_json_error(array('filter' => $new_filters));
         endif;

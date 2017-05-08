@@ -18,7 +18,6 @@
 
         $(document).on('click', '#load-more', function (e) {
             if (can_load && page != last_page) {
-                start_waiting();
                 can_load = false;
                 var main_container = $("#filter-search"),
                     orderby = $('.filters #orderby').val(),
@@ -61,11 +60,9 @@
                             load_more_button.attr('href', new_url + 'page/' + (page + 1) + '/');
                     }
                     can_load = true;
-                    end_waiting();
                 }).fail(function (xhr, textStatus, e) {
                     console.log(xhr.responseText);
                     can_load = true;
-                    end_waiting();
                 });
                 if (load_more_button.attr('href') != window.location) {
                     window.history.pushState(null, null, load_more_button.attr('href'));
@@ -77,8 +74,7 @@
         $(document).on('click', '#filter-search input', function () {
             if (can_load) {
                 can_load = false;
-                $(this).closest('li').toggleClass('active');
-                $(this).closest('ul').find('.count').hide();
+                $(this).closest('li').toggleClass('active').find('.count').hide();
                 create_url();
             }
         });
@@ -91,7 +87,6 @@
         });
 
         function create_url() {
-            start_waiting();
             var main_container = $("#filter-search"),
                 orderby = $('.filters #orderby').val(),
                 fields = {
@@ -137,17 +132,11 @@
                 }
                 $('#filter-search').html(res.data['filter']);
                 can_load = true;
-                end_waiting();
+            }).fail(function (xhr, textStatus, e) {
+                console.log(xhr.responseText);
+                can_load = true;
             });
             window.history.pushState(null, null, new_url);
-        }
-
-        function start_waiting() {
-            $('#filter-search, ul.products').append('<div class="waiting"></div>');
-        }
-
-        function end_waiting() {
-            $('#filter-search, ul.products').remove('div.waiting');
         }
 
     });
